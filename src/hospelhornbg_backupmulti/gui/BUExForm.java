@@ -11,6 +11,7 @@ import javax.swing.JTabbedPane;
 import javax.swing.JScrollPane;
 import javax.swing.border.BevelBorder;
 
+import hospelhornbg_backupmulti.BackupManager;
 import hospelhornbg_backupmulti.DataFile;
 
 import javax.swing.JTree;
@@ -30,20 +31,24 @@ public class BUExForm extends JFrame{
 	
 	/*----- Instance Variables -----*/
 	
-	private JTextField txtSearch;
-	private JList<String> lstSearch;
-	private JTree tree;
+	private JTextField txtSearch; //Search all files in backup system by name
+	private JList<String> lstSearch; //File name search results
+	private JTree tree; //Tree view of backup files
 	
-	private JList<DataFile> lstFiles;
-	private JTextPane txtFileInfo;
+	private JList<DataFile> lstFiles; //List of files associated with node (like, various versions)
+	private JTextPane txtFileInfo; //Info on specific file/version
+	
+	private BackupManager manager;
 	
 	/*----- Initialization -----*/
 	
-	public BUExForm() {
+	public BUExForm(BackupManager bumng) {
+		manager = bumng;
 		this.setMinimumSize(new Dimension(MIN_WIDTH, MIN_HEIGHT));
 		this.setPreferredSize(new Dimension(MIN_WIDTH, MIN_HEIGHT));
 		
 		initGUI();
+		loadManagerView();
 	}
 
 	private void initGUI(){
@@ -212,6 +217,33 @@ public class BUExForm extends JFrame{
 		pnlButtons.add(btnRun, gbc_btnRun);
 	}
 	
+	/*----- GUI View -----*/
+	
+	private void loadManagerView(){
+		//TODO
+		//Loads the tree view etc.
+	}
+	
 	/*----- Actions -----*/
+	
+	protected void action_onSettings(){
+		//TODO
+	}
+	
+	protected void action_onExtract(){
+		//TODO
+	}
+	
+	protected void action_onRunBackup(){
+		//TODO
+	}
+	
+	protected void action_onTabChange(){
+		//TODO
+	}
+	
+	protected void action_onSearchGo(){
+		//TODO
+	}
 	
 }
