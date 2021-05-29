@@ -246,4 +246,18 @@ public class BUExForm extends JFrame{
 		//TODO
 	}
 	
+	protected void action_onViewTreeNode(){
+		//TODO
+	}
+	
+	protected void action_onViewSearchNode(){
+		//TODO
+		//Viewing a search result
+	}
+	
+	protected void action_onViewListSelection(){
+		//TODO
+		//Viewing an item from the selection result in the details text box
+	}
+	
 }

@@ -16,31 +16,35 @@ public class DriveFileSystem {
 		//Return the record size in the long scratch field
 		//Skip flags
 		long cpos = offset + 2;
-		short version = data.shortFromFile(cpos); cpos += 2;
 		int pdiroff = data.intFromFile(cpos); cpos += 4;
-		long guid = data.longFromFile(cpos); cpos += 8;
+		int vcount = data.intFromFile(cpos); cpos += 4;
 		SerializedString ss = data.readVariableLengthString("UTF8", cpos, BinFieldSize.WORD, 2);
 		cpos += ss.getSizeOnDisk();
 		String nameraw = ss.getString();
 		
-		IDSettableFileNode fn = new IDSettableFileNode(parent, nameraw + "@" + Long.toHexString(guid));
+		VersionedFileNode fn = new VersionedFileNode(parent, nameraw);
 		fn.setSourcePath(data.getPath());
-		fn.setScratchLong(cpos-offset);
 		fn.setOffset(Integer.toUnsignedLong(pdiroff));
-		fn.setMetadataValue(FVER_KEY, Short.toString(version));
+		//fn.setMetadataValue(FVER_KEY, Short.toString(version));
 		fn.setMetadataValue(PARENT_OFF_KEY, Integer.toHexString(pdiroff));
 		fn.setMetadataValue(DATAGUID_KEY, Integer.toHexString(pdiroff));
-		fn.setUID(guid);
 		
+		fn.allocSubfileList(vcount);
+		for(int i = 0; i < vcount; i++){
+			fn.addSubfile(data.longFromFile(cpos));
+			cpos += 8;
+		}
+		fn.setScratchLong(cpos-offset);
+
 		return fn;
 	}
 	
 	public static DirectoryNode readDirRecord(DirectoryNode parent, FileBuffer data, long offset){
 		//Return the record size in the long scratch field
 		long cpos = offset + 2;
+		int poff = data.intFromFile(cpos); cpos += 4;
 		int ccount = data.intFromFile(cpos); cpos += 4;
 		int coff = data.intFromFile(cpos); cpos += 4;
-		int poff = data.intFromFile(cpos); cpos += 4;
 		
 		SerializedString ss = data.readVariableLengthString("UTF8", cpos, BinFieldSize.WORD, 2);
 		cpos += ss.getSizeOnDisk();

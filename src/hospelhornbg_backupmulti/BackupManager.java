@@ -6,14 +6,22 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.InetAddress;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
+import waffleoRai_Files.tree.DirectoryNode;
 import waffleoRai_Reflection.ReflectionUtils;
 import waffleoRai_Utils.FileBuffer;
 
@@ -44,6 +52,13 @@ public class BackupManager {
 	
 	private DeviceRecord localHost;
 	private List<DeviceRecord> devices;
+	
+	//Backup state
+	private DirectoryNode prev_root;
+	private OutputStream fs_out;
+	private long fs_out_pos;
+	private Map<String, String> pathsubs;
+	private List<String> blacklist;
 
 	/**
 	 * Construct a <code>BackupManager</code> using the directory
@@ -254,10 +269,114 @@ public class BackupManager {
 	 * @return
 	 * @since 1.0.0
 	 */
+	public String getHostBlacklistRelativePath(){
+		if(localHost == null) return null;
+		StringBuilder sb = new StringBuilder(4096);
+		sb.append("/"); sb.append(BackupProgramFiles.DN_INDEX);
+		sb.append("/"); sb.append(BackupProgramFiles.DN_INDEX_FS);
+		sb.append("/"); sb.append(localHost.getDisplayName());
+		sb.append("/"); sb.append(BackupProgramFiles.FN_INDEX_DEVBL);
+		return sb.toString();
+	}
+	
+	/**
+	 * 
+	 * @return
+	 * @since 1.0.0
+	 */
+	public String getHostBlacklistAbsolutePath(){
+		return toHostFSPath(getHostBlacklistRelativePath());
+	}
+	
+	/**
+	 * 
+	 * @return
+	 * @since 1.0.0
+	 */
+	public String toHostFSPath(String relPath){
+		if(relPath == null) return null;
+		return getRootDirPath() + File.separator + relPath.replace('/', File.separatorChar);
+	}
+	
+	/**
+	 * 
+	 * @return
+	 * @since 1.0.0
+	 */
 	public List<DeviceRecord> getAllDevices(){
 		List<DeviceRecord> list = new ArrayList<DeviceRecord>(devices.size()+1);
 		list.addAll(devices);
 		return list;
+	}
+	
+	/**
+	 * 
+	 * @return
+	 * @since 1.0.0
+	 */
+	public List<String> defaultBlacklist(){
+		List<String> list = new LinkedList<String>();
+		if(this.localHost != null){
+			int os = localHost.getOSEnum();
+			DirectoryStream<Path> dstr = null;
+			switch(os){
+			case BackupProgramFiles.OSENUM_WIN:
+				//Anything on OS root that isn't Users
+				try{
+					dstr = Files.newDirectoryStream(Paths.get("C:"));
+					for(Path p : dstr){
+						String apath = p.toAbsolutePath().toString();
+						if(!apath.endsWith("Users")) list.add(apath);
+					}
+					dstr.close();
+				}
+				catch(Exception ex){ex.printStackTrace();}
+				break;
+			}
+		}
+				
+		Collections.sort(list);
+		return list;
+	}
+	
+	/**
+	 * 
+	 * @return
+	 * @since 1.0.0
+	 */
+	public List<String> getHostBlacklist() throws IOException{
+		List<String> list = new LinkedList<String>();
+		String path = getHostBlacklistAbsolutePath();
+		if(path == null || path.isEmpty()) return list;
+		
+		if(!FileBuffer.fileExists(path)){
+			//return default list
+			return defaultBlacklist();
+		}
+		BufferedReader br = new BufferedReader(new FileReader(path));
+		String line = null;
+		while((line = br.readLine()) != null){
+			if(line.isEmpty()) continue;
+			list.add(line);
+		}
+		br.close();
+		Collections.sort(list);
+		return list;
+	}
+	
+	/**
+	 * 
+	 * @return
+	 * @since 1.0.0
+	 */
+	public void setHostBlacklist(Collection<String> list) throws IOException{
+		if(list == null) return;
+		String path = getHostBlacklistAbsolutePath();
+		BufferedWriter bw = new BufferedWriter(new FileWriter(path));
+		for(String s : list){
+			bw.write(s + "\n");
+		}
+		bw.close();
 	}
 	
 	/**
@@ -308,6 +427,27 @@ public class BackupManager {
 		bw.write(INIKEY_HASHALL + "=" + hash_all + "\n");
 		bw.write(INIKEY_COMPTHRESH + "=" + Long.toHexString(comp_thresh) + "\n");
 		bw.close();
+	}
+
+	
+	/**
+	 * 
+	 * @param subpaths
+	 * @param observer
+	 * @return
+	 * @since 1.0.0
+	 */
+	public boolean runBackup(Map<String, String> subpaths, BackupListener observer){
+		//TODO
+		if(localHost == null) return false;
+		
+		//Get the fs dir path.
+		String idxfs_dir = this.getRootDirPath() + File.separator
+				+ BackupProgramFiles.DN_INDEX + File.separator
+				+ BackupProgramFiles.DN_INDEX_FS + File.separator
+				+ localHost.getDisplayName();
+		
+		return false;
 	}
 	
 }

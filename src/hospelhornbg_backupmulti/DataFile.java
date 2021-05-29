@@ -21,9 +21,9 @@ public class DataFile implements Comparable<DataFile>{
 	
 	/*----- Constants -----*/
 	
-	private static final long GIGABYTE = 0x40000000;
-	private static final long MEGABYTE = 0x100000;
-	private static final long KILOBYTE = 0x400;
+	public static final long GIGABYTE = 0x40000000;
+	public static final long MEGABYTE = 0x100000;
+	public static final long KILOBYTE = 0x400;
 	
 	/*----- Instance Variables -----*/
 	

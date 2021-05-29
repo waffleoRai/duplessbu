@@ -12,6 +12,7 @@ public class BackupProgramFiles {
 	
 	public static final String FN_SETTINGS_BUDRIVE = "settings.ini";
 	public static final String FN_INDEX_DEVTBL = "devs.bin";
+	public static final String FN_INDEX_DEVBL = "blacklist.txt";
 	
 	public static final int OSENUM_UNK = 0;
 	public static final int OSENUM_WIN = 1;
