@@ -50,7 +50,8 @@ public class DriveFileSystem {
 		cpos += ss.getSizeOnDisk();
 		String nameraw = ss.getString();
 		
-		DirectoryNode dn = new DirectoryNode(parent, nameraw);
+		//DirectoryNode dn = new DirectoryNode(parent, nameraw);
+		DirectoryNode dn = new LoadableDirectoryNode(parent, nameraw);
 		dn.setSourcePath(data.getPath());
 		dn.setScratchLong(cpos - offset);
 		dn.setOffset(Integer.toUnsignedLong(coff));
@@ -60,6 +61,27 @@ public class DriveFileSystem {
 		dn.setMetadataValue(PARENT_OFF_KEY, Integer.toHexString(poff));
 		
 		return dn;
+	}
+	
+	public static FileBuffer serializeNode(VersionedFileNode fn){
+		if(fn == null) return null;
+		String name = fn.getFileName();
+		int vcount = fn.subfileCount();
+		int alloc = 13 + (name.length() << 2) + (vcount << 3);
+		FileBuffer buff = new FileBuffer(alloc, false);
+		
+		int flags = 0;
+		if(vcount > 0) flags |= 0x4000;
+		buff.addToFile((short)flags);
+		DirectoryNode parent = fn.getParent();
+		if(parent == null) buff.addToFile(0);
+		else buff.addToFile((int)parent.getOffset());
+		buff.addToFile(vcount);
+		buff.addVariableLengthString("UTF8", name, BinFieldSize.WORD, 2);
+		long[] ids = fn.getSubfiles();
+		for(long l : ids) buff.addToFile(l);
+		
+		return buff;
 	}
 
 }

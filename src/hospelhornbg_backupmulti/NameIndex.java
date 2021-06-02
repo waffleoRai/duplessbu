@@ -9,4 +9,8 @@ public class NameIndex {
 		return null;
 	}
 	
+	public void addMapping(String name, long uid){
+		//TODO
+	}
+	
 }

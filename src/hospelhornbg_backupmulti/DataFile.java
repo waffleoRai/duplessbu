@@ -59,7 +59,7 @@ public class DataFile implements Comparable<DataFile>{
 		device_files = new TreeMap<Integer, List<DeviceFile>>();
 	}
 	
-	public static DataFile generateDataFileRecord(String sourcepath) throws IOException{
+	public static DataFile generateDataFileRecord(String sourcepath, byte[] hash) throws IOException{
 		File f = new File(sourcepath);
 		if(!f.isFile()) throw new IOException("File \"" + sourcepath + "\" does not exist!");
 		
@@ -69,13 +69,16 @@ public class DataFile implements Comparable<DataFile>{
 		rec.timestamp = ZonedDateTime.ofInstant(Instant.ofEpochMilli(rec.timestamp_raw), ZoneId.systemDefault());
 		
 		//Hash :|
-		try {
-			rec.hash = FileBuffer.getFileHash(BackupProgramFiles.HASH_ALGO, sourcepath);
-		} 
-		catch (NoSuchAlgorithmException e) {
-			e.printStackTrace();
-			throw new IOException("File \"" + sourcepath + "\" hash failed");
+		if(hash == null){
+			try {
+				rec.hash = FileBuffer.getFileHash(BackupProgramFiles.HASH_ALGO, sourcepath);
+			} 
+			catch (NoSuchAlgorithmException e) {
+				e.printStackTrace();
+				throw new IOException("File \"" + sourcepath + "\" hash failed");
+			}	
 		}
+		else rec.hash = hash;
 		
 		rec.guid = 0L;
 		for(int i = 0; i < 8; i++){
@@ -105,8 +108,8 @@ public class DataFile implements Comparable<DataFile>{
 		return rec;
 	}
 	
-	public static DataFile generateDataFileRecord(Path sourcepath){
-		return generateDataFileRecord(sourcepath.toAbsolutePath());
+	public static DataFile generateDataFileRecord(Path sourcepath, byte[] hash) throws IOException{
+		return generateDataFileRecord(sourcepath.toAbsolutePath().toString(), hash);
 	}
 	
 	public static DataFile parseDataFileRecord(FileBuffer dat, long stoff) throws IOException{
@@ -168,6 +171,23 @@ public class DataFile implements Comparable<DataFile>{
 		return 0;
 	}
 	
+	public boolean isCompressed(){return this.is_compressed;}
+	
+	public long getRawTimestamp(){return this.timestamp_raw;}
+	
+	public long getGUID(){return this.guid;}
+	
+	public DeviceFile getDeviceFileFor(int dev_id, short drive_id, String fpath){
+		List<DeviceFile> dlist = device_files.get(dev_id);
+		if(dlist == null || dlist.isEmpty()) return null;
+		for(DeviceFile df : dlist){
+			if(df.drive_id == drive_id){
+				if(df.dev_path.equalsIgnoreCase(fpath)) return df;
+			}
+		}
+		return null;
+	}
+	
 	/*----- Display -----*/
 	
 	public String decSizeString(){
@@ -204,6 +224,19 @@ public class DataFile implements Comparable<DataFile>{
 	}
 	
 	/*----- Setters -----*/
+	
+	public DeviceFile addDeviceFile(int dev_id, short drive_id, String path){
+		List<DeviceFile> dlist = device_files.get(dev_id);
+		if(dlist == null){
+			dlist = new LinkedList<DeviceFile>();
+			device_files.put(dev_id, dlist);
+		}
+		
+		DeviceFile df = new DeviceFile(drive_id, path);
+		dlist.add(df);
+		
+		return df;
+	}
 	
 	/*----- Compare -----*/
 	

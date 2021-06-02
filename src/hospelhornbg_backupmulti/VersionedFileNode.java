@@ -29,6 +29,14 @@ public class VersionedFileNode extends FileNode{
 		return subfiles.size();
 	}
 	
+	public boolean hasSubfile(long uid){
+		if(subfiles == null) return false;
+		for(Long id : subfiles){
+			if(id == uid) return true;
+		}
+		return false;
+	}
+	
 	public long[] getSubfiles(){
 		if(subfiles == null || subfiles.isEmpty()) return null;
 		long[] out = new long[subfiles.size()];

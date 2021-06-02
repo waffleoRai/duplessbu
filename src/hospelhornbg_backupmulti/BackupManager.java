@@ -1,8 +1,10 @@
 package hospelhornbg_backupmulti;
 
+import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -16,12 +18,17 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 
+import hospelhornbg_backupmulti.DataFile.DeviceFile;
+import hospelhornbg_backupmulti.DeviceRecord.DriveRecord;
 import waffleoRai_Files.tree.DirectoryNode;
+import waffleoRai_Files.tree.FileNode;
 import waffleoRai_Reflection.ReflectionUtils;
 import waffleoRai_Utils.FileBuffer;
 
@@ -53,12 +60,19 @@ public class BackupManager {
 	private DeviceRecord localHost;
 	private List<DeviceRecord> devices;
 	
+	private DataIndex idx_dat;
+	private NameIndex idx_name;
+	
 	//Backup state
+	private short drive_id;
 	private DirectoryNode prev_root;
 	private OutputStream fs_out;
 	private long fs_out_pos;
 	private Map<String, String> pathsubs;
 	private List<String> blacklist;
+	
+	private Map<String, int[]> fsrepl_pmap;
+	private LinkedList<int[]> fsrepl_q;
 
 	/**
 	 * Construct a <code>BackupManager</code> using the directory
@@ -300,6 +314,17 @@ public class BackupManager {
 	
 	/**
 	 * 
+	 * @param guid
+	 * @return
+	 * @since 1.0.0
+	 */
+	public String getDataFileRelativePath(long guid){
+		//TODO
+		return null;
+	}
+	
+	/**
+	 * 
 	 * @return
 	 * @since 1.0.0
 	 */
@@ -429,17 +454,230 @@ public class BackupManager {
 		bw.close();
 	}
 
+	private boolean backupDirectory(DirectoryNode oldnode, String path, long fsrec_offset, BackupListener observer) throws IOException{
+		//TODO
+		
+		//Check for alias
+		/*boolean aliaspath = false;
+		String apath = null;
+		if(pathsubs != null){
+			apath = pathsubs.get(path);
+		}
+		if(apath == null) apath = path;
+		else aliaspath = true;*/
+		
+		//Scan for contents of directory
+		List<Path> subdirs = new LinkedList<Path>();
+		List<String> files = new LinkedList<String>();
+		Set<String> cnames = new HashSet<String>();
+		DirectoryStream<Path> dstr = Files.newDirectoryStream(Paths.get(path));
+		for(Path p : dstr){
+			if(Files.isDirectory(p))subdirs.add(p);
+			else files.add(p.toAbsolutePath().toString());
+			cnames.add(p.getFileName().toString().toLowerCase());
+		}
+		dstr.close();
+		
+		//Scan for old children in fs record but not on device (anymore)
+		if(oldnode != null){
+			List<FileNode> children = oldnode.getChildren();
+			for(FileNode fn : children){
+				String name = fn.getFileName().toLowerCase();
+				if(!cnames.contains(name)){
+					cnames.add(name);
+					if(fn.isDirectory()){
+						subdirs.add(Paths.get(path + File.separator + name));
+					}
+					else{
+						files.add(path + File.separator + name);
+					}
+				}
+			}
+		}
+		
+		//Files
+		String tpath = getRootDirPath() + File.separator + BackupProgramFiles.DN_DATA + File.separator + "data.tmp";
+		for(String fpath : files){
+			
+			//Get previous record (if exists)
+			String filename = fpath.substring(fpath.lastIndexOf(File.separatorChar) + 1);
+			VersionedFileNode prevrec = null;
+			if(oldnode != null){
+				FileNode fn = oldnode.getNodeAt("./" + filename);
+				if(fn != null){
+					if(fn instanceof VersionedFileNode){
+						prevrec = (VersionedFileNode)fn;
+					}
+				}
+			}
+			
+			if(prevrec != null){
+				long[] ids = prevrec.getSubfiles();
+				for(long id : ids){
+					DataFile df = idx_dat.getDataRecord(id);
+					DeviceFile vf = df.getDeviceFileFor(localHost.getID(), drive_id, fpath);
+					vf.fs_offset = (int)fs_out_pos;
+				}
+			}
+			
+			//Check if still exists and not blacklisted (if not, just copy old fs record)
+			if(!FileBuffer.fileExists(fpath) || blacklist.contains(fpath)){
+				if(prevrec != null){
+					FileBuffer fsdat = DriveFileSystem.serializeNode(prevrec);
+					fsdat.writeToStream(fs_out);
+					//Find datafiles and update device record with new offset...
+					fs_out_pos += fsdat.getFileSize();
+				}
+				continue;
+			}
+			
+			//Check if should hash regardless if new
+			DataFile dat = null;
+			long match_uid = 0L;
+			if(hash_all){
+				//Hash the file
+				byte[] hash = BackupProgramFiles.getFileHash(fpath, observer);
+				
+				//Check to see if identical file already exists
+				long guid = BackupProgramFiles.hash2UID(hash);
+				if(idx_dat.recordExists(guid)){
+					//If so, check if match is another version of this file
+					//If not, set match_uid
+					if(prevrec == null) match_uid = guid;
+					else{
+						if(!prevrec.hasSubfile(guid)) match_uid = guid;
+					}
+				}
+				else{
+					//If not, set dat
+					dat = DataFile.generateDataFileRecord(fpath, hash);
+					//idx_dat.addDataRecord(dat);
+					
+					//Copy data to backup drive
+					String dstpath = toHostFSPath(getDataFileRelativePath(guid));
+					BackupProgramFiles.copyToBackup(fpath, dstpath, dat.isCompressed(), observer);
+				}
+			}
+			else{
+				//Determine most recent previous version
+				DataFile lastver = null;
+				if(prevrec != null){
+					long[] prevvers = prevrec.getSubfiles();
+					long latest = 0L;
+					for(long ver : prevvers){
+						DataFile prev = idx_dat.getDataRecord(ver);
+						if(prev == null) continue;
+						long ts = prev.getRawTimestamp();
+						if(ts > latest){
+							latest = ts;
+							//lastver_guid = prev.getGUID();
+							lastver = prev;
+						}
+					}
+				}
+				
+				//Compare last modified date.
+				if(lastver != null){
+					File f = new File(fpath);
+					long ts = f.lastModified();	
+					if(lastver.getRawTimestamp() == ts) continue;
+				}
+				
+				//If new version of file, copy to backup drive while hashing
+				boolean deflate = AutoCompression.autocompressFile(fpath);
+				byte[] hash = BackupProgramFiles.hashAndCopy(fpath, tpath, deflate, observer);
+				long guid = BackupProgramFiles.hash2UID(hash);
+				
+				//See if identical file already exists.
+				if(idx_dat.recordExists(guid)){
+					//If so, delete temp copy, set match_uid
+					match_uid = guid;
+					Files.deleteIfExists(Paths.get(tpath));
+				}
+				else{
+					//If not, move temp copy to where expected
+					//Generate record and set to dat
+					String dstpath = toHostFSPath(getDataFileRelativePath(guid));
+					Files.move(Paths.get(tpath), Paths.get(dstpath));
+					dat = DataFile.generateDataFileRecord(fpath, hash);
+				}
+			}
+			
+			if(dat == null){
+				if(match_uid == 0L) continue;
+				//Matched to a file in a different location
+				//Update fs record and write to output
+				FileBuffer fsdat = null;
+				if(prevrec != null){
+					prevrec.addSubfile(match_uid);
+					fsdat = DriveFileSystem.serializeNode(prevrec);
+				}
+				else{
+					VersionedFileNode vfn = new VersionedFileNode(oldnode, filename);
+					fsdat = DriveFileSystem.serializeNode(vfn);
+				}
+				fsdat.writeToStream(fs_out);
+				
+				//Update GUID index record (new device file)
+				DataFile df = idx_dat.getDataRecord(match_uid);
+				DeviceFile vf = df.addDeviceFile(localHost.getID(), drive_id, fpath);
+				vf.fs_offset = (int)fs_out_pos;
+				fs_out_pos += fsdat.getFileSize();
+				
+				//Update Name index
+				idx_name.addMapping(filename, match_uid);
+				
+				continue;
+			}
+			
+			//New data
+			//Update fs record and write to output
+			VersionedFileNode vfn = new VersionedFileNode(oldnode, filename);
+			FileBuffer fsdat = DriveFileSystem.serializeNode(vfn);
+			fsdat.writeToStream(fs_out);
+			
+			//Update GUID index with DataFile record
+			//Get device record and update fs_offset...
+			idx_dat.addDataRecord(dat);
+			DeviceFile vf = dat.getDeviceFileFor(localHost.getID(), drive_id, fpath);
+			vf.fs_offset = (int)fs_out_pos;
+			
+			fs_out_pos += fsdat.getFileSize();
+			
+			//Update Name index
+			idx_name.addMapping(filename, dat.getGUID());
+		}
+		
+		//TODO
+		//Subdirectories
+		//First cycle through and write the incomplete fs records (with placeholders for offsets)
+		//Don't forget to update the directory offsets in the nodes for correct parent offsets
+		//Don't forget blacklist
+		for(Path dpath : subdirs){
+			//Count number of (non-blacklisted) children
+			//This INCLUDES those in old fs record, but not on device any more
+		}
+		
+		//Then call this function for the subdirs
+		//Don't forget aliases and blacklisting
+		
+		return false;
+	}
 	
 	/**
 	 * 
 	 * @param subpaths
 	 * @param observer
 	 * @return
+	 * @throws IOException 
 	 * @since 1.0.0
 	 */
-	public boolean runBackup(Map<String, String> subpaths, BackupListener observer){
+	public boolean runBackup(Map<String, String> subpaths, BackupListener observer) throws IOException{
 		//TODO
 		if(localHost == null) return false;
+		
+		pathsubs = subpaths;
+		blacklist = getHostBlacklist();
 		
 		//Get the fs dir path.
 		String idxfs_dir = this.getRootDirPath() + File.separator
@@ -447,7 +685,50 @@ public class BackupManager {
 				+ BackupProgramFiles.DN_INDEX_FS + File.separator
 				+ localHost.getDisplayName();
 		
-		return false;
+		List<DriveRecord> drives = localHost.getDrives();
+		for(DriveRecord drive : drives){
+			//TODO
+			String fsbin_path = idxfs_dir + File.separator + drive.name + ".bin";
+			String fstpath = fsbin_path + ".tmp";
+			
+			//Read existing fs
+			DirectoryNode prev_root = null;
+			if(FileBuffer.fileExists(fsbin_path)){
+				FileBuffer buff = FileBuffer.createBuffer(fsbin_path, false);
+				
+				//Read root dir record...
+				int childcount = buff.intFromFile(4L);
+				prev_root = new DirectoryNode(null, "");
+				long offset = 8L;
+				for(int c = 0; c < childcount; c++){
+					int flags = Short.toUnsignedInt(buff.shortFromFile(offset));
+					if((flags & 0x8000) != 0){
+						//Dir
+						DirectoryNode child = DriveFileSystem.readDirRecord(prev_root, buff, offset);
+						offset += child.getScratchLong();
+					}
+					else{
+						FileNode child = DriveFileSystem.readFileRecord(prev_root, buff, offset);
+						offset += child.getScratchLong();
+					}
+				}
+			}
+			
+			//Open temp file for updated fs
+			fs_out_pos = 0L;
+			fs_out = new BufferedOutputStream(new FileOutputStream(fstpath));
+			
+			//Do file system scan from root. TODO
+			
+			//Close
+			fs_out.close();
+			
+			//Move stuff
+			Files.deleteIfExists(Paths.get(fsbin_path));
+			Files.move(Paths.get(fstpath), Paths.get(fsbin_path));
+		}
+		
+		return true;
 	}
 	
 }

@@ -7,13 +7,17 @@ public class AutoCompression {
 	public static final int AUTOCOMPEXT_IF_REPETITIVE = 2;
 	
 	public static long compressionThreshold(){
-		//TODO
-		return 0;
+		return BackupProgramFiles.getCompressionThreshold();
 	}
 	
 	public static int isAutocompExt(String ext){
 		//TODO
 		return 0;
+	}
+	
+	public static boolean autocompressFile(String path){
+		//TODO
+		return false;
 	}
 
 	//Score file repetition (byte frequencies) to see if there's a lot of easily compressable padding

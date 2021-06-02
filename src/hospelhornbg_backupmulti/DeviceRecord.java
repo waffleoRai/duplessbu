@@ -87,6 +87,13 @@ public class DeviceRecord {
 	
 	public int getOSEnum(){return os_enum;}
 	
+	public List<DriveRecord> getDrives(){
+		if(drives == null || drives.isEmpty()) new LinkedList<DriveRecord>();
+		List<DriveRecord> list = new ArrayList<DriveRecord>(drives.size());
+		list.addAll(drives);
+		return list;
+	}
+	
 	/*----- Setters -----*/
 	
 	public void setDisplayName(String str){this.dev_name = str;}
