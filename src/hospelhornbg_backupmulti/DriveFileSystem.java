@@ -24,7 +24,7 @@ public class DriveFileSystem {
 		
 		VersionedFileNode fn = new VersionedFileNode(parent, nameraw);
 		fn.setSourcePath(data.getPath());
-		fn.setOffset(Integer.toUnsignedLong(pdiroff));
+		fn.setOffset(offset);
 		//fn.setMetadataValue(FVER_KEY, Short.toString(version));
 		fn.setMetadataValue(PARENT_OFF_KEY, Integer.toHexString(pdiroff));
 		fn.setMetadataValue(DATAGUID_KEY, Integer.toHexString(pdiroff));

@@ -7,6 +7,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -59,9 +60,9 @@ public class DataFile implements Comparable<DataFile>{
 		device_files = new TreeMap<Integer, List<DeviceFile>>();
 	}
 	
-	public static DataFile generateDataFileRecord(String sourcepath, byte[] hash) throws IOException{
-		File f = new File(sourcepath);
-		if(!f.isFile()) throw new IOException("File \"" + sourcepath + "\" does not exist!");
+	public static DataFile generateDataFileRecord(String true_path, String alias_path, byte[] hash) throws IOException{
+		File f = new File(true_path);
+		if(!f.isFile()) throw new IOException("File \"" + true_path + "\" does not exist!");
 		
 		DataFile rec = new DataFile();
 		rec.file_size = f.length();
@@ -71,11 +72,11 @@ public class DataFile implements Comparable<DataFile>{
 		//Hash :|
 		if(hash == null){
 			try {
-				rec.hash = FileBuffer.getFileHash(BackupProgramFiles.HASH_ALGO, sourcepath);
+				rec.hash = FileBuffer.getFileHash(BackupProgramFiles.HASH_ALGO, true_path);
 			} 
 			catch (NoSuchAlgorithmException e) {
 				e.printStackTrace();
-				throw new IOException("File \"" + sourcepath + "\" hash failed");
+				throw new IOException("File \"" + true_path + "\" hash failed");
 			}	
 		}
 		else rec.hash = hash;
@@ -87,25 +88,30 @@ public class DataFile implements Comparable<DataFile>{
 		}
 		
 		//Determine whether to compress
-		if(rec.file_size >= AutoCompression.compressionThreshold()){
-			int dot = sourcepath.lastIndexOf('.');
+		/*if(rec.file_size >= AutoCompression.compressionThreshold()){
+			int dot = true_path.lastIndexOf('.');
 			if(dot >= 0){
-				int autoc = AutoCompression.isAutocompExt(sourcepath.substring(dot+1));
+				int autoc = AutoCompression.isAutocompExt(true_path.substring(dot+1));
 				if(autoc == AutoCompression.AUTOCOMPEXT_YES) rec.is_compressed = true;
 				else if (autoc == AutoCompression.AUTOCOMPEXT_IF_REPETITIVE){
 					int rthresh = AutoCompression.getByteDistScoreThreshold();
-					int rscore = AutoCompression.scoreByteDist(sourcepath);
+					int rscore = AutoCompression.scoreByteDist(true_path);
 					rec.is_compressed = (rscore >= rthresh);
 				}
 			}
-		}
+		}*/
+		rec.is_compressed = AutoCompression.autocompressFile(true_path);
 		
 		//Note file path
 		List<DeviceFile> dlist = new LinkedList<DeviceFile>();
-		dlist.add(new DeviceFile(BackupProgramFiles.currentDriveID(), sourcepath));
+		dlist.add(new DeviceFile(BackupProgramFiles.currentDriveID(), alias_path));
 		rec.device_files.put(BackupProgramFiles.currentDevice().getID(), dlist);
 		
 		return rec;
+	}
+	
+	public static DataFile generateDataFileRecord(String sourcepath, byte[] hash) throws IOException{
+		return generateDataFileRecord(sourcepath, sourcepath, hash);
 	}
 	
 	public static DataFile generateDataFileRecord(Path sourcepath, byte[] hash) throws IOException{
@@ -164,11 +170,54 @@ public class DataFile implements Comparable<DataFile>{
 		return ct;
 	}
 	
+	public FileBuffer serializeMe(){
+		int alloc = this.getSerializedRecordSize() + 20;
+		FileBuffer buff = new FileBuffer(alloc, true);
+		
+		int flags = 0;
+		if(is_compressed) flags = 0x8000;
+		buff.add24ToFile((short)flags);
+		buff.addToFile(0); //placeholder
+		buff.addToFile(this.guid);
+		buff.addToFile(this.timestamp_raw);
+		buff.addToFile(this.file_size);
+		for(int i = 0; i < hash.length; i++) buff.addToFile(hash[i]);
+		
+		//Device records
+		int dv_count = this.device_files.size();
+		buff.addToFile(dv_count);
+		List<Integer> ids = new LinkedList<Integer>();
+		ids.addAll(device_files.keySet());
+		Collections.sort(ids);
+		for(int id : ids){
+			List<DeviceFile> list = device_files.get(id);
+			buff.addToFile(id);
+			buff.addToFile(list.size());
+			for(DeviceFile f : list){
+				buff.addToFile(f.drive_id);
+				buff.addToFile(f.fs_offset);
+			}
+		}
+		
+		//Update size
+		int sz = (int)(buff.getFileSize() - 6);
+		buff.replaceInt(sz, 2);
+		
+		//Return
+		return buff;
+	}
+	
 	/*----- Getters -----*/
 	
 	public int countLinkedDeviceFiles(){
-		//TODO
-		return 0;
+		int c = 0;
+		List<Integer> ids = new LinkedList<Integer>();
+		ids.addAll(device_files.keySet());
+		for(int id : ids){
+			List<DeviceFile> list = device_files.get(id);
+			c += list.size();
+		}
+		return c;
 	}
 	
 	public boolean isCompressed(){return this.is_compressed;}
@@ -177,12 +226,14 @@ public class DataFile implements Comparable<DataFile>{
 	
 	public long getGUID(){return this.guid;}
 	
-	public DeviceFile getDeviceFileFor(int dev_id, short drive_id, String fpath){
+	public DeviceFile getDeviceFileFor(int dev_id, short drive_id, long fsoff){
+		
 		List<DeviceFile> dlist = device_files.get(dev_id);
 		if(dlist == null || dlist.isEmpty()) return null;
 		for(DeviceFile df : dlist){
 			if(df.drive_id == drive_id){
-				if(df.dev_path.equalsIgnoreCase(fpath)) return df;
+				//if(df.dev_path.equalsIgnoreCase(fpath)) return df;
+				if(df.fs_offset == fsoff) return df;
 			}
 		}
 		return null;
