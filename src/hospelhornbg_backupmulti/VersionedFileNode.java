@@ -8,12 +8,16 @@ import waffleoRai_Files.tree.FileNode;
 public class VersionedFileNode extends FileNode{
 	
 	private ArrayList<Long> subfiles;
+	private long parent_offset;
 
 	public VersionedFileNode(DirectoryNode parent, String name) {
 		super(parent, name);
 	}
 	
 	public void allocSubfileList(int size){subfiles = new ArrayList<Long>(size);}
+	
+	public long getParentOffset(){return parent_offset;}
+	public void setParentOffset(long off){parent_offset = off;}
 	
 	public void addSubfile(long uid){
 		if(subfiles == null) allocSubfileList(8);

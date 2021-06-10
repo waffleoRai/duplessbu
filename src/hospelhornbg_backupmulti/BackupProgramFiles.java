@@ -60,8 +60,8 @@ public class BackupProgramFiles {
 	}
 	
 	public static long getCompressionThreshold(){
-		//TODO
-		return 0L;
+		if(current_manager == null) return -1L;
+		return current_manager.getCompThreshold();
 	}
 	
 	public static DeviceRecord currentDevice(){
@@ -70,8 +70,8 @@ public class BackupProgramFiles {
 	}
 
 	public static short currentDriveID(){
-		//TODO
-		return 0;
+		if(current_manager == null) return 0;
+		return current_manager.getCurrentDrive();
 	}
 	
 	public static long hash2UID(byte[] hash){
@@ -146,12 +146,40 @@ public class BackupProgramFiles {
 		}
 	}
 	
-	public static void copyToBackup(String srcpath, String dstpath, boolean deflate, BackupListener observer){
-		//TODO
+	public static void copyToBackup(String srcpath, String dstpath, boolean deflate, BackupListener observer) throws IOException{
+		OutputStream os = null;
+		BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(dstpath));
+		if(deflate){
+			os = new DeflaterOutputStream(bos);
+		}
+		else os = bos;
+		
+		long size = FileBuffer.fileSize(srcpath);
+		if(observer != null) observer.setCopySize(size);
+		BufferedInputStream bis = new BufferedInputStream(new FileInputStream(srcpath));
+		byte[] buff = new byte[0x1000];
+		long ct = 0;
+		
+		while(ct < size){
+			int read = bis.read(buff);
+			os.write(buff, 0, read);
+			ct += size;
+			if(observer != null) observer.updateCopyProgress(ct);
+		}
+		
+		bis.close();
+		os.close();
+		
 	}
 	
 	public static void shutDownManager(){
-		//TODO
+		if(current_manager != null) {
+			try{current_manager.close();}
+			catch(Exception ex){
+				ex.printStackTrace();
+			}
+		}
+		current_manager = null;
 	}
 	
 }

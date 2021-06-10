@@ -12,11 +12,18 @@ import waffleoRai_Utils.FileBuffer;
 public class LoadableDirectoryNode extends DirectoryNode{
 
 	private boolean isLoaded;
+	private long child_offset;
+	private long parent_offset;
 	
 	public LoadableDirectoryNode(DirectoryNode parent, String name) {
 		super(parent, name);
 		isLoaded = false;
 	}
+	
+	public long getChildrenOffset(){return child_offset;}
+	public long getParentOffset(){return parent_offset;}
+	public void setChildrenOffset(long off){child_offset = off;}
+	public void setParentOffset(long off){parent_offset = off;}
 	
 	public boolean childrenLoaded(){
 		return isLoaded;
@@ -27,7 +34,8 @@ public class LoadableDirectoryNode extends DirectoryNode{
 		int ccount = (int)super.getLength();
 		
 		String binpath = super.getSourcePath();
-		long cpos = super.getOffset();
+		//long cpos = super.getOffset();
+		long cpos = child_offset;
 		
 		//Open
 		try{

@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.TreeMap;
 
 import hospelhornbg_backupmulti.DataFile.DeviceFile;
 import hospelhornbg_backupmulti.DeviceRecord.DriveRecord;
@@ -66,8 +67,11 @@ public class BackupManager {
 	
 	private DataIndex idx_dat;
 	private NameIndex idx_name;
+	private Map<Short, DriveFileSystem> dfs_map;
 	
 	//Backup state
+	private volatile boolean cancel_backup; //For async stopping
+	
 	private short drive_id;
 	private OutputStream fs_out;
 	private long fs_out_pos;
@@ -94,6 +98,7 @@ public class BackupManager {
 			x.printStackTrace();
 			throw new IOException("Path BackupManager class was loaded from could not be determined.");
 		}
+		checkDirectories();
 		loadSettings();
 		loadDevices();
 		loadIndices();
@@ -109,9 +114,26 @@ public class BackupManager {
 	 */
 	public BackupManager(String dir_path) throws IOException {
 		root_dir = dir_path;
+		checkDirectories();
 		loadSettings();
 		loadDevices();
 		loadIndices();
+	}
+	
+	private void checkDirectories() throws IOException{
+		//Checks to see if necessary directories are present and creates them if not.
+		//fs dir
+		String dpath = this.getRootDirPath() + File.separator + 
+				BackupProgramFiles.DN_INDEX + File.separator + 
+				BackupProgramFiles.DN_INDEX_FS;
+		if(!FileBuffer.directoryExists(dpath)){
+			Files.createDirectories(Paths.get(dpath));
+		}
+		dpath = this.getRootDirPath() + File.separator + 
+				BackupProgramFiles.DN_DATA;
+		if(!FileBuffer.directoryExists(dpath)){
+			Files.createDirectories(Paths.get(dpath));
+		}
 	}
 	
 	private void loadSettings() throws IOException{
@@ -184,10 +206,29 @@ public class BackupManager {
 			//Local host detection should be called manually.
 			devices = new ArrayList<DeviceRecord>();
 		}
+		
+		dfs_map = new TreeMap<Short, DriveFileSystem>();
+		for(DeviceRecord dev : devices){
+			String devidxpath = this.getRootDirPath() + File.separator +
+					BackupProgramFiles.DN_INDEX + File.separator + 
+					BackupProgramFiles.DN_INDEX_FS + File.separator + 
+					dev.getDisplayName();
+			List<DriveRecord> drives = dev.getDrives();
+			for(DriveRecord dr : drives){
+				String fsbinpath = devidxpath + File.separator + dr.name + ".bin";
+				DriveFileSystem dfs = new DriveFileSystem(dr, fsbinpath, dev.getOSEnum() == BackupProgramFiles.OSENUM_WIN);
+				dfs_map.put(dr.ID, dfs);
+			}
+		}
+		
+		
 	}
 	
 	private void loadIndices() throws IOException{
-		//TODO
+		String idxdir = this.getRootDirPath() + File.separator + 
+				BackupProgramFiles.DN_INDEX;
+		idx_dat = new DataIndex(idxdir + File.separator + "ididx.bin");
+		idx_name = new NameIndex(idxdir + File.separator + "nidx.bin");
 	}
 	
 	/**
@@ -200,9 +241,11 @@ public class BackupManager {
 	 * @return New <code>DeviceRecord</code> containing information on the host
 	 * system. If the host system has no network name or there is another problem
 	 * generating a record, this method will return <code>null</code>.
+	 * @throws IOException If there is an issue generating directories to store device
+	 * info in.
 	 * @since 1.0.0
 	 */
-	public DeviceRecord genRecordForLocalHost(){
+	public DeviceRecord genRecordForLocalHost() throws IOException{
 		String localname = null;
 		try{localname = InetAddress.getLocalHost().getHostName();}
 		catch(Exception ex){ex.printStackTrace(); return null;}
@@ -242,6 +285,22 @@ public class BackupManager {
 		else{
 			//Just "/"
 			dev.addDrive("root", "/");
+		}
+		
+		//Drive file systems & create index directories
+		String dpath = this.getRootDirPath() + File.separator + 
+				BackupProgramFiles.DN_INDEX + File.separator + 
+				BackupProgramFiles.DN_INDEX_FS + File.separator + 
+				dev.getDisplayName();
+		if(!FileBuffer.directoryExists(dpath)){
+			Files.createDirectories(Paths.get(dpath));
+		}
+		
+		List<DriveRecord> drives = dev.getDrives();
+		for(DriveRecord dr : drives){
+			String fsbinpath = dpath + File.separator + dr.name + ".bin";
+			DriveFileSystem dfs = new DriveFileSystem(dr, fsbinpath, dev.getOSEnum() == BackupProgramFiles.OSENUM_WIN);
+			dfs_map.put(dr.ID, dfs);
 		}
 		
 		devices.add(dev);
@@ -291,6 +350,13 @@ public class BackupManager {
 	 * @return
 	 * @since 1.0.0
 	 */
+	public short getCurrentDrive(){return this.drive_id;}
+	
+	/**
+	 * 
+	 * @return
+	 * @since 1.0.0
+	 */
 	public String getHostBlacklistRelativePath(){
 		if(localHost == null) return null;
 		StringBuilder sb = new StringBuilder(4096);
@@ -328,11 +394,20 @@ public class BackupManager {
 	 */
 	public String getDataFileRelativePath(long guid){
 		long b0 = (guid >>> 56) & 0xFF;
+		long b1 = (guid >>> 48) & 0xFF;
 		StringBuilder sb = new StringBuilder(64);
 		sb.append("./");
 		sb.append(BackupProgramFiles.DN_DATA);
 		sb.append("/");
 		sb.append(String.format("%02x", b0));
+		sb.append("/");
+		sb.append(String.format("%02x", b1));
+		String dpath = sb.toString();
+		if(!FileBuffer.directoryExists(dpath)){
+			try{Files.createDirectories(Paths.get(dpath));}
+			catch(IOException ex){ex.printStackTrace();}
+		}
+		
 		sb.append("/");
 		sb.append(String.format("%016x", guid));
 		return sb.toString();
@@ -404,6 +479,41 @@ public class BackupManager {
 		return list;
 	}
 	
+	private int estimateChildCount(Path dirpath) throws IOException{
+		if(dirpath == null) return 0;
+		if(!Files.isDirectory(dirpath)) return 0;
+		int count = 0;
+		DirectoryStream<Path> dstr = Files.newDirectoryStream(dirpath);
+		for(Path p : dstr){
+			if(blacklist.contains(p.toAbsolutePath().toString().toLowerCase())) continue;
+			if(Files.isDirectory(p)){
+				count += estimateChildCount(dirpath);
+			}
+			else count++;
+		}
+		dstr.close();
+		return count;
+	}
+	
+	/**
+	 * 
+	 * @return
+	 * @throws IOException 
+	 * @since 1.0.0
+	 */
+	public int estimateBackuppableFileCount() throws IOException{
+		//Count non-blacklisted files on host device
+		if(localHost == null) return 0;
+		int count = 0;
+		List<DriveRecord> drives = localHost.getDrives();
+		if(blacklist == null) blacklist = getHostBlacklist();
+		for(DriveRecord drive : drives){
+			if(blacklist.contains(drive.device_path)) continue;
+			count += estimateChildCount(Paths.get(drive.device_path));
+		}
+		return count;
+	}
+	
 	/**
 	 * 
 	 * @return
@@ -469,10 +579,30 @@ public class BackupManager {
 		bw.close();
 	}
 
-	private boolean backupFile(DirectoryNode pnode, String tpath, String true_path, String alias_path, boolean parent_exists, BackupListener observer) throws IOException{
+	private void saveDeviceTable() throws IOException{
+		String path = getRootDirPath() + File.separator+
+				BackupProgramFiles.DN_INDEX + File.separator + 
+				BackupProgramFiles.FN_INDEX_DEVTBL;
+		BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(path));
 		
+		FileBuffer buff = new FileBuffer(8, true);
+		buff.addToFile(DeviceRecord.SERIAL_VERSION);
+		buff.addToFile((short)devices.size());
+		buff.writeToStream(bos);
+		
+		//Devices.
+		for(DeviceRecord dev : devices){
+			buff = dev.serializeMe();
+			buff.writeToStream(bos);
+		}
+		
+		bos.close();
+	}
+	
+	private boolean backupFile(DirectoryNode pnode, String tpath, String true_path, String alias_path, boolean parent_exists, BackupListener observer) throws IOException{
 		//Check if file exists (ie. is not blacklisted and file exists on source drive)
 		boolean iexist = parent_exists && FileBuffer.fileExists(true_path) && !blacklist.contains(alias_path);
+		if(observer != null) observer.onStartFileProcessing(alias_path);
 		
 		//Get previous record (if exists)
 		String filename = alias_path.substring(alias_path.lastIndexOf(File.separatorChar) + 1);
@@ -482,6 +612,8 @@ public class BackupManager {
 			if(fn != null){
 				if(fn instanceof VersionedFileNode){
 					prevrec = (VersionedFileNode)fn;
+					//Update parent offset.
+					prevrec.setParentOffset(pnode.getOffset());
 				}
 			}
 		}
@@ -591,6 +723,7 @@ public class BackupManager {
 					fsdat.writeToStream(fs_out);
 					fs_out_pos += fsdat.getFileSize();	
 				}
+				if(observer != null) observer.incrementProcessedFileCount();
 				return true;
 			} 
 			
@@ -616,12 +749,14 @@ public class BackupManager {
 			//Update Name index
 			idx_name.addMapping(filename, match_uid);
 			
+			if(observer != null) observer.incrementProcessedFileCount();
 			return true;
 		}
 		
 		//New data
 		//Update fs record and write to output
 		VersionedFileNode vfn = new VersionedFileNode(pnode, filename);
+		if(pnode != null) vfn.setParentOffset(pnode.getOffset());
 		FileBuffer fsdat = DriveFileSystem.serializeNode(vfn);
 		fsdat.writeToStream(fs_out);
 		
@@ -636,11 +771,13 @@ public class BackupManager {
 		//Update Name index
 		idx_name.addMapping(filename, dat.getGUID());
 		
+		if(observer != null) observer.incrementProcessedFileCount();
 		return true;
 	}
 	
 	private boolean backupDirectory(DirectoryNode mynode, String true_path, String alias_path, boolean parent_exists, BackupListener observer) throws IOException{
 		//Blacklist must be recursive!!!! If parent does not "exist", nothing below it does!
+		if(observer != null) observer.onStartDirectoryProcessing(alias_path);
 		
 		//Aliased only if alias_path is non-null
 		boolean aliased = (alias_path != null);
@@ -806,6 +943,7 @@ public class BackupManager {
 	 * @since 1.0.0
 	 */
 	public boolean runBackup(Map<String, String> subpaths, BackupListener observer) throws IOException{
+		cancel_backup = false;
 		if(localHost == null) return false;
 		
 		pathsubs = subpaths;
@@ -818,6 +956,11 @@ public class BackupManager {
 				+ BackupProgramFiles.DN_INDEX + File.separator
 				+ BackupProgramFiles.DN_INDEX_FS + File.separator
 				+ localHost.getDisplayName();
+		
+		//Estimate file count
+		if(observer != null){
+			observer.setTotalEstimatedFiles(estimateBackuppableFileCount());
+		}
 		
 		List<DriveRecord> drives = localHost.getDrives();
 		boolean allokay = true;
@@ -851,6 +994,17 @@ public class BackupManager {
 			
 			//Do root
 			boolean b = backupDirectory(driveroot, drive.device_path, drive.device_path, true, observer);
+			if(this.cancel_backup){
+				if(observer != null) observer.onCancelAcknowledge();
+				fs_out.close();
+				blacklist.clear(); blacklist = null;
+				pathsubs.clear(); pathsubs = null;
+				drive_id = 0;
+				fs_out = null;
+				fsoffrepl.clear(); fsoffrepl = null;
+				if(observer != null) observer.onFinishFailure();
+				return false;
+			}
 			allokay = allokay && b;
 			
 			//Close fs output stream
@@ -889,7 +1043,32 @@ public class BackupManager {
 			Files.delete(Paths.get(fstpath));
 		}
 		
+		blacklist.clear(); blacklist = null;
+		pathsubs.clear(); pathsubs = null;
+		drive_id = 0;
+		fs_out = null;
+		fsoffrepl.clear(); fsoffrepl = null;
+		
+		if(observer != null){
+			if(allokay) observer.onFinishSuccess();
+			else observer.onFinishFailure();
+		}
+		
 		return allokay;
+	}
+	
+	/**
+	 * @throws IOException 
+	 * @since 1.0.0
+	 */
+	public void close() throws IOException{
+		saveSettings();
+		saveDeviceTable();
+		idx_dat.saveDataRecords();
+		
+		String idxname_path = this.getRootDirPath() + File.separator + 
+				BackupProgramFiles.DN_INDEX + File.separator + "nidx.bin";
+		idx_name.saveIndexTo(idxname_path);
 	}
 	
 }

@@ -5,11 +5,6 @@ package hospelhornbg_backupmulti.gui;
 
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.io.IOException;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-
-import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 
 import hospelhornbg_backupmulti.BackupProgramFiles;

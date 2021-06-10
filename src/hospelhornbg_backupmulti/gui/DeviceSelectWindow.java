@@ -10,6 +10,7 @@ import javax.swing.JScrollPane;
 import java.awt.Insets;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.io.IOException;
 import java.util.List;
 
 import javax.swing.border.BevelBorder;
@@ -124,7 +125,14 @@ public class DeviceSelectWindow extends JFrame{
 
 	public void onNew(){
 		if(manager == null) return;
-		DeviceRecord r = manager.genRecordForLocalHost();
+		DeviceRecord r = null;
+		try{r = manager.genRecordForLocalHost();}
+		catch(IOException ex){
+			ex.printStackTrace();
+			JOptionPane.showMessageDialog(this, "Detection of device info failed! Exiting...", 
+					"Error", JOptionPane.ERROR_MESSAGE);
+			onCancel();
+		}
 		
 		if(r != null){
 			selection = true;
