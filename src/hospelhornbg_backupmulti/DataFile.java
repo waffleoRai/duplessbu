@@ -224,7 +224,11 @@ public class DataFile implements Comparable<DataFile>{
 	
 	public long getRawTimestamp(){return this.timestamp_raw;}
 	
+	public ZonedDateTime getTimestamp(){return this.timestamp;}
+	
 	public long getGUID(){return this.guid;}
+	
+	public long getFileSize(){return this.file_size;}
 	
 	public DeviceFile getDeviceFileFor(int dev_id, short drive_id, long fsoff){
 		
@@ -239,7 +243,35 @@ public class DataFile implements Comparable<DataFile>{
 		return null;
 	}
 	
+	public List<Integer> getAssociatedDevices(){
+		List<Integer> list = new LinkedList<Integer>();
+		if(device_files == null) return list;
+		list.addAll(device_files.keySet());
+		Collections.sort(list);
+		return list;
+	}
+	
+	public List<DeviceFile> getDeviceFiles(int dev_id){
+		List<DeviceFile> list = new LinkedList<DeviceFile>();
+		if(device_files == null) return list;
+		List<DeviceFile> mlist = device_files.get(dev_id);
+		if(mlist == null) return list;
+		list.addAll(mlist);
+		return list;
+	}
+	
 	/*----- Display -----*/
+	
+	public String getHashString(){
+		StringBuilder sb = new StringBuilder(48);
+		if(hash != null){
+			for(int i = 0; i < hash.length; i++){
+				sb.append(String.format("%02x", hash[i]));
+			}
+		}
+		else return "<NULL>";
+		return sb.toString();
+	}
 	
 	public String decSizeString(){
 

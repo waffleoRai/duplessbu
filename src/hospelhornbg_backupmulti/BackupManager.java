@@ -51,10 +51,14 @@ import waffleoRai_Utils.FileBuffer;
  */
 public class BackupManager {
 	
+	/*----- Constants -----*/
+	
 	public static final long COMP_THRESH_DEFO = 0x1000L;
 	
 	public static final String INIKEY_HASHALL = "HASHALL";
 	public static final String INIKEY_COMPTHRESH = "COMPTHRESH";
+	
+	/*----- Instance Variables -----*/
 	
 	private String root_dir;
 	private boolean hash_all;
@@ -79,6 +83,8 @@ public class BackupManager {
 	private List<String> blacklist;
 	
 	private Map<Integer, Integer> fsoffrepl;
+	
+	/*----- Initialization -----*/
 
 	/**
 	 * Construct a <code>BackupManager</code> using the directory
@@ -231,6 +237,19 @@ public class BackupManager {
 		idx_name = new NameIndex(idxdir + File.separator + "nidx.bin");
 	}
 	
+	/*----- [] -----*/
+	
+	/**
+	 * 
+	 * @param uid
+	 * @return
+	 * @since 1.0.0
+	 */
+	public DataFile getDataRecord(long uid){
+		if(idx_dat == null) return null;
+		return idx_dat.getDataRecord(uid);
+	}
+	
 	/**
 	 * Generate a device record for the system currently running the tool. The
 	 * name in the record will be the device's network name. 
@@ -348,6 +367,31 @@ public class BackupManager {
 	/**
 	 * 
 	 * @return
+	 * @throws IOException 
+	 * @since 1.0.0
+	 */
+	public DirectoryNode getBackupTree() throws IOException{
+		DirectoryNode root = new DirectoryNode(null, "backup");
+		if(devices == null) return root;
+		
+		for(DeviceRecord dev : devices){
+			DirectoryNode droot = new DirectoryNode(root, dev.getDisplayName());
+			List<DriveRecord> drives = dev.getDrives();
+			if(drives == null) continue;
+			for(DriveRecord drive : drives){
+				DriveFileSystem dfs = dfs_map.get(drive.ID);
+				DirectoryNode vroot = dfs.loadRoot();
+				vroot.setFileName(drive.name);
+				vroot.setParent(droot);
+			}
+		}
+		
+		return root;
+	}
+	
+	/**
+	 * 
+	 * @return
 	 * @since 1.0.0
 	 */
 	public short getCurrentDrive(){return this.drive_id;}
@@ -415,6 +459,20 @@ public class BackupManager {
 	
 	/**
 	 * 
+	 * @param dev_id
+	 * @return
+	 * @since 1.0.0
+	 */
+	public DeviceRecord getDevice(int dev_id){
+		if(devices == null) return null;
+		for(DeviceRecord r : devices){
+			if(r.getID() == dev_id) return r;
+		}
+		return null;
+	}
+	
+	/**
+	 * 
 	 * @return
 	 * @since 1.0.0
 	 */
@@ -431,6 +489,7 @@ public class BackupManager {
 	 */
 	public List<String> defaultBlacklist(){
 		List<String> list = new LinkedList<String>();
+		list.add(getRootDirPath());
 		if(this.localHost != null){
 			int os = localHost.getOSEnum();
 			DirectoryStream<Path> dstr = null;
@@ -512,6 +571,34 @@ public class BackupManager {
 			count += estimateChildCount(Paths.get(drive.device_path));
 		}
 		return count;
+	}
+	
+	/**
+	 * @param dev_file_rec
+	 * @return
+	 * @since 1.0.0
+	 */
+	public String resolveDeviceFilePath(DeviceFile dev_file_rec){
+		if(dev_file_rec == null) return null;
+		if(dev_file_rec.dev_path != null && !dev_file_rec.dev_path.isEmpty()) return dev_file_rec.dev_path;
+		DriveFileSystem fs = dfs_map.get(dev_file_rec.drive_id);
+		if(fs == null) return null;
+		String s = fs.resolveDeviceAbsoluteFSPath(dev_file_rec.fs_offset);
+		dev_file_rec.dev_path = s;
+		return s;
+	}
+	
+	/**
+	 * 
+	 * @param search
+	 * @param caseSensitive
+	 * @param exact
+	 * @return
+	 * @since 1.0.0
+	 */
+	public Map<String, Collection<Long>> searchByName(String search, boolean caseSensitive, boolean exact){
+		if(this.idx_name == null) return null;
+		return idx_name.searchByName(search, caseSensitive, exact);
 	}
 	
 	/**
@@ -1055,6 +1142,25 @@ public class BackupManager {
 		}
 		
 		return allokay;
+	}
+	
+	/**
+	 * @since 1.0.0
+	 */
+	public synchronized void requestBackupCancel(){
+		cancel_backup = true;
+	}
+	
+	/**
+	 * 
+	 * @param datafile
+	 * @param target
+	 * @return
+	 * @since 1.0.0
+	 */
+	public boolean extractDataFile(DataFile datafile, String target){
+		//TODO
+		return false;
 	}
 	
 	/**
