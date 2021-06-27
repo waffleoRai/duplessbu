@@ -22,25 +22,26 @@ public class NameIndex {
 	
 	public NameIndex(String srcpath) throws IOException{
 		map = new HashMap<String, List<Long>>();
-		FileBuffer file = FileBuffer.createBuffer(srcpath, true);
-		long cpos = 4; //skip header
-		long fsz = file.getFileSize();
-		
-		while(cpos < fsz){
-			SerializedString ss = file.readVariableLengthString("UTF8", cpos, BinFieldSize.WORD, 2);
-			String s = ss.getString();
-			cpos += ss.getSizeOnDisk();
+		if(FileBuffer.fileExists(srcpath)){
+			FileBuffer file = FileBuffer.createBuffer(srcpath, true);
+			long cpos = 4; //skip header
+			long fsz = file.getFileSize();
 			
-			int count = file.intFromFile(cpos); cpos+=4;
-			if(count < 1) continue;
-			List<Long> l = new LinkedList<Long>();
-			map.put(s, l);
-			for(int i = 0; i < count; i++){
-				l.add(file.longFromFile(cpos));
-				cpos+=8;
-			}
-		}
-		
+			while(cpos < fsz){
+				SerializedString ss = file.readVariableLengthString("UTF8", cpos, BinFieldSize.WORD, 2);
+				String s = ss.getString();
+				cpos += ss.getSizeOnDisk();
+				
+				int count = file.intFromFile(cpos); cpos+=4;
+				if(count < 1) continue;
+				List<Long> l = new LinkedList<Long>();
+				map.put(s, l);
+				for(int i = 0; i < count; i++){
+					l.add(file.longFromFile(cpos));
+					cpos+=8;
+				}
+			}	
+		}	
 	}
 
 	public Map<String, Collection<Long>> searchByName(String search, boolean caseSensitive, boolean exact){

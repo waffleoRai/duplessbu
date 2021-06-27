@@ -17,7 +17,39 @@ import waffleoRai_GUITools.GUITools;
  */
 public class GUIMain {
 
-
+	private static void launchMainGUI(){
+		BUExForm mygui = new BUExForm(BackupProgramFiles.getActiveManager());
+    	mygui.setLocation(GUITools.getScreenCenteringCoordinates(mygui));
+    	mygui.addWindowListener(new WindowAdapter(){
+    		public void windowClosing(WindowEvent e) {
+    			BackupProgramFiles.shutDownManager();
+    			System.exit(0);
+			}
+    	});
+    	mygui.pack();
+    	mygui.setVisible(true);
+	}
+	
+	private static void deviceSelectPopup(){
+		DeviceSelectWindow dsw = new DeviceSelectWindow(BackupProgramFiles.getActiveManager());
+		dsw.addWindowListener(new WindowAdapter(){
+    		public void windowClosed(WindowEvent e) {
+    			//System.err.println("dsw window closed event heard!");
+    			if(!dsw.getCloseSelection()){
+    				System.err.println("Cancelled, exiting.");
+        			System.exit(2);
+        		}
+        		DeviceRecord dev = dsw.getSelectedDevice();
+        		BackupProgramFiles.getActiveManager().setCurrentHost(dev);
+        		launchMainGUI();
+			}
+    	});
+		dsw.setLocation(GUITools.getScreenCenteringCoordinates(dsw));
+		dsw.pack();
+		
+		dsw.setVisible(true);
+	}
+	
 	public static void main(String[] args) {
 
 		//Parse arguments. Arg0 should be dir.
@@ -25,6 +57,9 @@ public class GUIMain {
 		String budir = null;
 		if(args != null && args.length > 0){
 			budir = args[0];
+		}
+		if(budir != null){
+			System.err.println("Backup directory requested: " + budir);
 		}
 
 		//Load device list
@@ -48,31 +83,9 @@ public class GUIMain {
             {
             	//First, popup to match device if it was not found.
             	if(BackupProgramFiles.currentDevice() == null){
-            		//Match!
-            		DeviceSelectWindow dsw = new DeviceSelectWindow(BackupProgramFiles.getActiveManager());
-            		dsw.setLocation(GUITools.getScreenCenteringCoordinates(dsw));
-            		dsw.pack();
-            		dsw.setVisible(true);
-            		
-            		//See if okay. If not, exit.
-            		if(!dsw.getCloseSelection()){
-            			System.exit(2);
-            		}
-            		DeviceRecord dev = dsw.getSelectedDevice();
-            		BackupProgramFiles.getActiveManager().setCurrentHost(dev);
+            		deviceSelectPopup();
             	}
-            	
-            	//Now the main GUI
-            	BUExForm mygui = new BUExForm(BackupProgramFiles.getActiveManager());
-            	mygui.setLocation(GUITools.getScreenCenteringCoordinates(mygui));
-            	mygui.addWindowListener(new WindowAdapter(){
-            		public void windowClosing(WindowEvent e) {
-            			BackupProgramFiles.shutDownManager();
-            			System.exit(0);
-					}
-            	});
-            	mygui.pack();
-            	mygui.setVisible(true);
+            	else launchMainGUI();
             }
         });
 		
